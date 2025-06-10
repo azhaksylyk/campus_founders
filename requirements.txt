@@ -1,0 +1,4 @@
+asyncua
+speechrecognition
+pyaudio
+httpx
