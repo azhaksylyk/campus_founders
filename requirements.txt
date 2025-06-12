@@ -2,3 +2,5 @@ asyncua
 speechrecognition
 pyaudio
 httpx
+gtts
+pydub
