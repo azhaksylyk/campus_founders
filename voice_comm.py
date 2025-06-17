@@ -8,47 +8,51 @@ import speech_recognition as sr
 # New imports for Text-to-Speech
 from gtts import gTTS
 import os
-# import playsound # REMOVE THIS IMPORT
 from pydub import AudioSegment
-from pydub.playback import play # Used for playing AudioSegment, though we'll use run_in_executor
+from pydub.playback import play
 
 # --- Configuration ---
-# OPCUA_SERVER_URL = "opc.tcp://PC:4840"
-OPCUA_SERVER_URL = "opc.tcp://127.0.0.1:4840/freeopcua/server/"
+OPCUA_SERVER_URL = "opc.tcp://127.0.0.1:4840/freeopcua/server/" # Ensure this matches your server's endpoint
 
 # --- Node IDs for the Coffee Machine (Adjust these based on your CODESYS Symbol Configuration) ---
-NAMESPACE_PREFIX = "ns=4;s=|var|CODESYS Control Win V3 x64.Application.PLC_PRG."
+# IMPORTANT: The namespace index (e.g., 'ns=2') and structure ('CoffeeMachine/Inputs/')
+# must match your OPC UA Server's address space.
+# Based on the server's INFO logs (e.g., "Registered namespace with index: 2")
+SERVER_NAMESPACE_INDEX = 2 # This needs to match the index registered by your OPC UA server
+
+# Define base path to the CoffeeMachine object, using '/' for hierarchy
+BASE_MACHINE_PATH = f"ns={SERVER_NAMESPACE_INDEX};s=CoffeeMachine"
 
 # Input/Control Buttons
-NODE_ID_POWER_ON_BUTTON = f"{NAMESPACE_PREFIX}PowerOnButton"
-NODE_ID_RESET_BUTTON = f"{NAMESPACE_PREFIX}ResetButton"
-NODE_ID_COFFEE_PICKED_UP = f"{NAMESPACE_PREFIX}CoffeePickedUp"
-NODE_ID_COFFEE_TYPE_SELECTION = f"{NAMESPACE_PREFIX}CoffeeType"
+NODE_ID_POWER_ON_BUTTON = f"{BASE_MACHINE_PATH}/Inputs/PowerOnButton"
+NODE_ID_RESET_BUTTON = f"{BASE_MACHINE_PATH}/Inputs/ResetButton"
+NODE_ID_COFFEE_PICKED_UP = f"{BASE_MACHINE_PATH}/Inputs/CoffeePickedUp"
+NODE_ID_COFFEE_TYPE_SELECTION = f"{BASE_MACHINE_PATH}/Inputs/CoffeeType"
 
 # Output/Actuators
-NODE_ID_WATER_PUMP = f"{NAMESPACE_PREFIX}WaterPump"
-NODE_ID_HEATER = f"{NAMESPACE_PREFIX}Heater"
-NODE_ID_COFFEE_READY_STATUS = f"{NAMESPACE_PREFIX}CoffeeReady"
-NODE_ID_PANEL_MESSAGE = f"{NAMESPACE_PREFIX}PanelMessage"
+NODE_ID_WATER_PUMP = f"{BASE_MACHINE_PATH}/Outputs/WaterPump"
+NODE_ID_HEATER = f"{BASE_MACHINE_PATH}/Outputs/Heater"
+NODE_ID_COFFEE_READY_STATUS = f"{BASE_MACHINE_PATH}/Outputs/CoffeeReady"
+NODE_ID_PANEL_MESSAGE = f"{BASE_MACHINE_PATH}/Outputs/PanelMessage"
 
 # LED Status Indicators
-NODE_ID_LED_POWER = f"{NAMESPACE_PREFIX}LED_Power"
-NODE_ID_LED_WATER_EMPTY = f"{NAMESPACE_PREFIX}LED_WaterEmpty"
-NODE_ID_LED_MILK_EMPTY = f"{NAMESPACE_PREFIX}LED_MilkEmpty"
-NODE_ID_LED_WASTE_FULL = f"{NAMESPACE_PREFIX}LED_WasteFull"
-NODE_ID_LED_BEANS_EMPTY = f"{NAMESPACE_PREFIX}LED_BeansEmpty"
+NODE_ID_LED_POWER = f"{BASE_MACHINE_PATH}/LEDs/LED_Power"
+NODE_ID_LED_WATER_EMPTY = f"{BASE_MACHINE_PATH}/LEDs/LED_WaterEmpty"
+NODE_ID_LED_MILK_EMPTY = f"{BASE_MACHINE_PATH}/LEDs/LED_MilkEmpty"
+NODE_ID_LED_WASTE_FULL = f"{BASE_MACHINE_PATH}/LEDs/LED_WasteFull"
+NODE_ID_LED_BEANS_EMPTY = f"{BASE_MACHINE_PATH}/LEDs/LED_BeansEmpty"
 
 # Levels/Sensors
-NODE_ID_WATER_LEVEL = f"{NAMESPACE_PREFIX}WaterLevel"
-NODE_ID_MILK_LEVEL = f"{NAMESPACE_PREFIX}MilkLevel"
-NODE_ID_COFFEE_BEANS_LEVEL = f"{NAMESPACE_PREFIX}CoffeeBeans"
-NODE_ID_WASTE_LEVEL = f"{NAMESPACE_PREFIX}WasteLevel"
+NODE_ID_WATER_LEVEL = f"{BASE_MACHINE_PATH}/Levels/WaterLevel"
+NODE_ID_MILK_LEVEL = f"{BASE_MACHINE_PATH}/Levels/MilkLevel"
+NODE_ID_COFFEE_BEANS_LEVEL = f"{BASE_MACHINE_PATH}/Levels/CoffeeBeans"
+NODE_ID_WASTE_LEVEL = f"{BASE_MACHINE_PATH}/Levels/WasteLevel"
 
 # Internal State (for monitoring)
-NODE_ID_MACHINE_STATE = f"{NAMESPACE_PREFIX}State"
-NODE_ID_TIME_COUNTER = f"{NAMESPACE_PREFIX}TimeCounter"
-NODE_ID_HEATING_DONE = f"{NAMESPACE_PREFIX}HeatingDone"
-NODE_ID_MACHINE_ON_STATUS = f"{NAMESPACE_PREFIX}MachineOn"
+NODE_ID_MACHINE_STATE = f"{BASE_MACHINE_PATH}/InternalState/State"
+NODE_ID_TIME_COUNTER = f"{BASE_MACHINE_PATH}/InternalState/TimeCounter"
+NODE_ID_HEATING_DONE = f"{BASE_MACHINE_PATH}/InternalState/HeatingDone"
+NODE_ID_MACHINE_ON_STATUS = f"{BASE_MACHINE_PATH}/InternalState/MachineOn"
 
 # Coffee types mapping (MUST match your CODESYS VAR CONSTANT for CoffeeType)
 COFFEE_TYPES = {
@@ -87,7 +91,7 @@ async def speak(text):
 
         # pydub's play() function is blocking, so run it in an executor
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: play(AudioSegment.from_mp3(audio_file)))
+        await loop.run_in_executor(None, lambda: play(AudioSegment.from_file(audio_file, format="mp3"))) # Use from_file for robustness
 
         os.remove(audio_file) # Clean up the audio file
     except Exception as e:
@@ -189,8 +193,21 @@ async def main():
         print("Connected successfully!")
         await speak("Connected to the coffee machine.")
 
+        # --- Diagnostic: Fetch and print namespaces to confirm index ---
+        try:
+            namespaces = await client.get_namespace_array()
+            print("\n--- Available Namespaces ---")
+            for i, ns_uri in enumerate(namespaces):
+                print(f"Namespace {i}: {ns_uri}")
+            print("--------------------------")
+            # IMPORTANT: Confirm that 'http://yourdomain.com/CoffeeMachineServer' or the URI from your server
+            # is listed here, and its index matches SERVER_NAMESPACE_INDEX (which should be 2).
+        except Exception as e:
+            print(f"Error fetching namespaces: {e}")
+        # -------------------------------------------------------------
 
         print("Fetching OPC UA nodes...")
+        # Get_node calls must now include the full path including the folders
         power_on_button_node = client.get_node(NODE_ID_POWER_ON_BUTTON)
         reset_button_node = client.get_node(NODE_ID_RESET_BUTTON)
         coffee_picked_up_node = client.get_node(NODE_ID_COFFEE_PICKED_UP)
@@ -218,7 +235,7 @@ async def main():
         print("All OPC UA nodes successfully fetched.")
 
 
-        # --- Helper to read all main machine status nodes ---
+        # --- Function to print and speak current status ---
         async def read_machine_status_nodes():
             try:
                 results = await asyncio.gather(
@@ -347,7 +364,7 @@ async def main():
                                 await asyncio.sleep(2)
                                 coffee_ready = await coffee_ready_status_node.get_value()
                                 panel_message = await panel_message_node.get_value()
-                                print(f"   Brewing Status: CoffeeReady={coffee_ready}, Panel Message='{panel_message}'")
+                                print(f"    Brewing Status: CoffeeReady={coffee_ready}, Panel Message='{panel_message}'")
                                 # Optional: Speak intermediate panel messages if they change significantly
                                 # await speak(f"Machine update: {panel_message}")
 
@@ -437,8 +454,8 @@ async def main():
                 await asyncio.sleep(2)
                 status = await read_machine_status_nodes()
                 machine_on = status['machine_on']
-                heating_done = status['heating_done']
-                print(f"   Current Status: Machine ON={machine_on}, HeatingDone={heating_done}, Panel Message='{status['panel_message']}'")
+                heating_done = status['h_done'] # Corrected: 'heating_done' to 'h_done' if that was the internal name
+                print(f"    Current Status: Machine ON={machine_on}, HeatingDone={heating_done}, Panel Message='{status['panel_message']}'")
                 if not machine_on:
                     await speak("Machine is still powering on.")
                 elif not heating_done:
@@ -470,7 +487,8 @@ async def main():
     finally:
         if 'client' in locals():
             try:
-                if client.is_connected_session():
+                # Changed client.is_connected_session() to client.is_connected
+                if client.is_connected:
                     print("\nDisconnecting from OPC UA server.")
                     await client.disconnect()
                     print("Disconnected.")
